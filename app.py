@@ -1,8 +1,23 @@
 from flask import Flask, request, jsonify
 from playwright.sync_api import sync_playwright
 import os
+import threading
 
 app = Flask(__name__)
+
+_playwright = None
+_browser = None
+_lock = threading.Lock()
+
+def get_browser():
+    global _playwright, _browser
+    if _browser is None or not _browser.is_connected():
+        _playwright = sync_playwright().start()
+        _browser = _playwright.chromium.launch(
+            headless=True,
+            args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+        )
+    return _browser
 
 @app.route('/scrape', methods=['POST'])
 def scrape():
@@ -13,18 +28,15 @@ def scrape():
         return jsonify({'html': '', 'error': 'URL required'}), 400
     
     try:
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(
-                headless=True,
-                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-            )
+        with _lock:
+            browser = get_browser()
             context = browser.new_context(
                 user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             )
             page = context.new_page()
             page.goto(url, wait_until='domcontentloaded', timeout=20000)
             html = page.content()
-            browser.close()
+            context.close()
             return jsonify({'html': html})
     except Exception as e:
         return jsonify({'html': '', 'error': str(e)}), 500
