@@ -1,4 +1,4 @@
-﻿from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify
 from playwright.sync_api import sync_playwright
 import os
 
@@ -14,12 +14,15 @@ def scrape():
     
     try:
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True)
+            browser = playwright.chromium.launch(
+                headless=True,
+                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+            )
             context = browser.new_context(
                 user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             )
             page = context.new_page()
-            page.goto(url, wait_until='networkidle', timeout=30000)
+            page.goto(url, wait_until='domcontentloaded', timeout=20000)
             html = page.content()
             browser.close()
             return jsonify({'html': html})
