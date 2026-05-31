@@ -1,38 +1,35 @@
-from flask import Flask, request, jsonify
-from playwright.sync_api import sync_playwright
+from fastapi import FastAPI
+from pydantic import BaseModel
+from playwright.async_api import async_playwright
+import asyncio
+import uvicorn
 import os
-import threading
 
-app = Flask(__name__)
-lock = threading.Lock()
+app = FastAPI()
 
-@app.route('/scrape', methods=['POST'])
-def scrape():
-    data = request.get_json()
-    url = data.get('url', '')
-    
-    if not url:
-        return jsonify({'html': '', 'error': 'URL required'}), 400
-    
-    with lock:
-        try:
-            with sync_playwright() as p:
-                browser = p.chromium.launch(
-                    headless=True,
-                    args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--single-process']
-                )
-                page = browser.new_page()
-                page.goto(url, wait_until='domcontentloaded', timeout=15000)
-                html = page.content()
-                browser.close()
-                return jsonify({'html': html})
-        except Exception as e:
-            return jsonify({'html': '', 'error': str(e)}), 500
+class ScrapeRequest(BaseModel):
+    url: str
 
-@app.route('/health', methods=['GET'])
-def health():
-    return jsonify({'status': 'ok'})
+@app.post("/scrape")
+async def scrape(request: ScrapeRequest):
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--single-process']
+            )
+            page = await browser.new_page()
+            await page.goto(request.url, wait_until='domcontentloaded', timeout=15000)
+            html = await page.content()
+            await browser.close()
+            return {"html": html}
+    except Exception as e:
+        return {"html": "", "error": str(e)}
 
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port, threaded=False)
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))
+    uvicorn.run(app, host="0.0.0.0", port=port)
